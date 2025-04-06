@@ -25,6 +25,12 @@ function App() {
     const [boardFen, setBoardFen] = useState(chess.current.fen()); // FEN displayed on the board
     const [fenInput, setFenInput] = useState(boardFen); // FEN in the input field
     const analyzingFenRef = useRef(null); // <-- Add this ref
+
+    // --- PV Stepping State --- ADD THESE ---
+    const [selectedLineIndex, setSelectedLineIndex] = useState(null); // Stores the index (0, 1, 2) of the clicked line, or null if none selected
+    const [currentMoveInLine, setCurrentMoveInLine] = useState(0); // Stores the number of moves from the selected PV to show on the board (0 means show starting position)
+    // --- End of New State ---
+
     const [fenError, setFenError] = useState(''); // FEN validation error message
 
     // --- Stockfish State (Using Manual Worker) ---
@@ -286,6 +292,134 @@ function App() {
       };
   }, []); // Empty dependency array ensures this setup runs only on initial mount/unmount cycles
 
+         // --- Effect for Spacebar Stepping --- ADD THIS HOOK ---
+             // --- Effect for Spacebar Stepping --- REVISED ---
+    useEffect(() => {
+        // Log when the effect runs (and re-runs due to dependencies)
+        console.log('[Effect Spacebar] Setting up keydown listener...');
+
+        const handleGlobalKeyDown = (event) => {
+            // 1. Log both key and code
+            console.log(`[Keydown] Key pressed: event.key='${event.key}', event.code='${event.code}'`);
+
+            const targetIsInput = event.target.matches('input[type="text"]');
+            console.log(`[Keydown] Is target the input field? ${targetIsInput}`);
+            if (targetIsInput) {
+                 console.log('[Keydown] Action: Ignored (Input field has focus).');
+                return;
+            }
+
+            // ---> CHANGE THIS CHECK <---
+            // 3. Check if the pressed key was the Spacebar using event.key
+            const isSpacebar = event.key === ' '; // Check for literal space character
+            // const isSpacebar = event.code === 'Space'; // Old check
+            // ---> END OF CHANGE <---
+            console.log(`[Keydown] Was spacebar pressed? (checking event.key === ' '): ${isSpacebar}`);
+
+            if (isSpacebar) {
+                console.log(`[Keydown] Spacebar detected via event.key.`); // New log
+                console.log(`[Keydown] Current State Check: selectedLineIndex=${selectedLineIndex}, isAnalyzing=${isAnalyzing}`);
+                const conditionsMet = (selectedLineIndex !== null && !isAnalyzing);
+                console.log(`[Keydown] Are stepping conditions met? ${conditionsMet}`);
+                if (conditionsMet) {
+                    event.preventDefault();
+                    console.log('[Keydown] Action: Prevented default scroll.');
+                    const selectedLine = analysisPVs[selectedLineIndex];
+                    const hasValidLineData = (selectedLine && selectedLine.pv);
+                    console.log(`[Keydown] Does selected line have valid data? ${hasValidLineData}`);
+                    if (hasValidLineData) {
+                        const movesInLine = selectedLine.pv.split(' ').length;
+                        console.log(`[Keydown] Found line with ${movesInLine} total moves.`);
+                        setCurrentMoveInLine(prev => {
+                            const nextMoveIndex = Math.min(prev + 1, movesInLine);
+                            console.log(`[Keydown] Action: Updating currentMoveInLine from ${prev} to ${nextMoveIndex}`);
+                            return nextMoveIndex;
+                        });
+                    } else {
+                         console.log('[Keydown] Action: Stepping ignored (Selected line data missing).');
+                    }
+                } else {
+                     console.log('[Keydown] Action: Stepping ignored (Conditions not met).');
+                }
+            } else {
+                 console.log(`[Keydown] Action: Key ignored (event.key was not ' ').`);
+            }
+        }; // End of handleGlobalKeyDown function definition
+
+        // Add listener directly
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        console.log('[Effect Spacebar] Listener ADDED.'); // Log addition
+
+        // Cleanup function
+        return () => {
+            // Log when cleanup runs
+            console.log('[Effect Spacebar] Cleaning up keydown listener...');
+            window.removeEventListener('keydown', handleGlobalKeyDown);
+            console.log('[Effect Spacebar] Listener REMOVED.'); // Log removal
+        };
+
+        // Dependencies remain the same (or try removing analysisPVs if still problematic)
+    }, [selectedLineIndex, isAnalyzing, analysisPVs]);
+    // --- End of Spacebar Effect ---
+    // --- End of Spacebar Effect ---
+
+
+        // --- Effect to Update Board during PV Stepping --- ADD THIS HOOK ---
+    useEffect(() => {
+        // Only run if a line is selected and analysis is not running
+        if (selectedLineIndex === null || isAnalyzing) {
+            // If nothing is selected, or analysis is running, we don't need to update board from PV
+            // (Board might be updated by analysis trigger or direct move)
+            return;
+        }
+
+        // Ensure we have the necessary data
+        const selectedLine = analysisPVs[selectedLineIndex];
+        const startFen = analyzingFenRef.current; // FEN when analysis started
+
+        if (!selectedLine || !selectedLine.pv || !startFen) {
+            console.warn("PV stepping effect: Missing data (selectedLine, PV string, or startFen).");
+            return; // Exit if data is missing
+        }
+
+        const sanMoves = selectedLine.pv.split(' ');
+        // Get the sub-array of moves to apply based on the current step count
+        const movesToApply = sanMoves.slice(0, currentMoveInLine);
+
+        console.log(`PV Board Update Effect: Applying ${movesToApply.length} moves: [${movesToApply.join(', ')}] from FEN: ${startFen}`);
+
+        try {
+            const replayGame = new Chess(startFen); // Start from the analysis base position
+            let moveApplied = true;
+            for (const move of movesToApply) {
+                if (!replayGame.move(move)) { // Apply moves using SAN
+                     console.error(`PV Step Error: Invalid SAN move '${move}' in sequence. Base FEN: ${startFen}, Sequence: ${selectedLine.pv}`);
+                     moveApplied = false;
+                     break; // Stop applying moves if one fails
+                }
+            }
+
+            if(moveApplied) {
+                // Update the board's display FEN only if all moves were applied successfully
+                const finalFen = replayGame.fen();
+                // Check if update is actually needed to prevent potential loops if deps aren't perfect
+                if (boardFen !== finalFen) {
+                    setBoardFen(finalFen);
+                }
+            } else {
+                // Optional: Maybe reset board to startFen if a move failed?
+                // if (boardFen !== startFen) setBoardFen(startFen);
+            }
+
+        } catch (error) {
+            console.error("Error during PV stepping board update:", error);
+            // Optional: Reset board or show error
+            // if (boardFen !== startFen) setBoardFen(startFen);
+        }
+
+        // Dependencies: This effect should run whenever the selected line, the step count,
+        // or the analysis state changes. analyzingFenRef is stable, analysisPVs content matters.
+    }, [selectedLineIndex, currentMoveInLine, isAnalyzing, analysisPVs, boardFen]); // Include boardFen to avoid unnecessary updates
 
     // --- Helper to send commands to Stockfish Worker ---
     const sendEngineCommand = (command) => {
@@ -320,6 +454,11 @@ function App() {
       setAnalysisProgress('Starting...');
       setEngineMessage('Analyzing...'); // Update general status
 
+          // ---> Reset selection state <---
+      setSelectedLineIndex(null);
+      setCurrentMoveInLine(0);
+      // ---> End of reset <---
+
       // Send commands to Stockfish
       sendEngineCommand(`position fen ${fen}`);
       // Request top 3 lines (MultiPV)
@@ -328,6 +467,38 @@ function App() {
       sendEngineCommand('go depth 18');
   };
   // --- End of Trigger Analysis Function ---
+
+        // --- PV Stepping Logic --- ADD THIS FUNCTION ---
+
+        const handleLineSelect = (index) => {
+            // Don't allow selection while the engine is busy analyzing
+            if (isAnalyzing) return;
+    
+            // If clicking the already selected line, deselect it
+            if (selectedLineIndex === index) {
+                setSelectedLineIndex(null);
+                setCurrentMoveInLine(0);
+                // Reset board to the FEN that was analyzed
+                if (analyzingFenRef.current) {
+                    setBoardFen(analyzingFenRef.current);
+                }
+                console.log(`Deselected line index: ${index}`);
+            } else {
+                // Select the new line
+                setSelectedLineIndex(index);
+                setCurrentMoveInLine(0); // Start stepping from the beginning
+    
+                // Reset the board display to the starting FEN of the analysis
+                if (analyzingFenRef.current) {
+                    setBoardFen(analyzingFenRef.current);
+                } else {
+                    // Fallback if ref is somehow null (shouldn't happen)
+                    console.warn("Cannot reset board for PV stepping: analyzingFenRef is null.");
+                }
+                console.log(`Selected line index: ${index}`);
+            }
+        };
+        // --- End of PV Stepping Logic ---
 
     // --- Piece Drop Logic (Handles moves made ON the board) ---
     const handlePieceDrop = (sourceSquare, targetSquare) => {
@@ -462,17 +633,23 @@ function App() {
 
 
         {/* Display Principal Variations */}
-        {analysisPVs.length > 0 && (
+                {/* Display Principal Variations */}
+                {analysisPVs.length > 0 && (
             <div className="pv-lines">
-            <strong>Top Lines:</strong>
-            <ul>
-                {analysisPVs.map((line) => (
-                    <li key={line.lineId}>
-                        {/* Format: (score) SAN_moves */}
-                        ({line.score}) {line.pv}
-                    </li>
-                ))}
-            </ul>
+                <strong>Top Lines:</strong>
+                <ul>
+                    {analysisPVs.map((line, index) => ( // Get index (0, 1, or 2)
+                        <li
+                            key={line.lineId}
+                            // ---> ADD onClick Handler <---
+                            onClick={() => handleLineSelect(index)}
+                            // ---> ADD className for styling <---
+                            className={selectedLineIndex === index ? 'selected-line' : ''}
+                        >
+                            ({line.score}) {line.pv}
+                        </li>
+                    ))}
+                </ul>
             </div>
         )}
 

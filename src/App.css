@@ -190,3 +190,24 @@ body {
 .pv-lines li:last-child {
   border-bottom: none;
 }
+
+/* Styling for PV Line Selection */
+.pv-lines li {
+  padding: 6px 8px; /* Add some padding */
+  margin-bottom: 2px; /* Slight space between lines */
+  border-radius: 3px;
+  transition: background-color 0.2s ease-in-out; /* Smooth hover */
+}
+.pv-lines li.selected-line {
+  background-color: #cce5ff; /* Lighter blue background for selection */
+  /* color: #004085; */ /* Optional darker text */
+  font-weight: bold;
+  cursor: default; /* Indicate it's selected and not clickable again easily */
+}
+.pv-lines li:not(.selected-line) {
+   cursor: pointer; /* Indicate other lines are clickable */
+}
+.pv-lines li:not(.selected-line):hover {
+   background-color: #e9ecef; /* Light grey hover */
+}
+
