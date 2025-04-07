@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react'; // Added useEffect
 import { Chessboard } from 'react-chessboard';
-import { Chess } from 'chess.js';
+import { Chess, SQUARES } from 'chess.js';
 // REMOVED: import stockfish from 'stockfish';
 import './App.css';
 
+
+// --- Constants --- ADD THIS ---
+const CENTER_SQUARES = ['e4', 'd4', 'e5', 'd5'];
+// --- End of Constants ---
 
 // --- Helper Function (outside the component) ---
 function formatScore(score, type) {
@@ -30,6 +34,11 @@ function App() {
     const [selectedLineIndex, setSelectedLineIndex] = useState(null); // Stores the index (0, 1, 2) of the clicked line, or null if none selected
     const [currentMoveInLine, setCurrentMoveInLine] = useState(0); // Stores the number of moves from the selected PV to show on the board (0 means show starting position)
     // --- End of New State ---
+
+     // --- Static Analysis State --- ADD THESE ---
+     const [attackedPieces, setAttackedPieces] = useState([]); // [{ square: 'e4', type: 'p', defended: true }, ...]
+     const [controlledCenterSquares, setControlledCenterSquares] = useState([]); // ['e4', 'd5', ...]
+     // --- End of New State ---   
 
     const [fenError, setFenError] = useState(''); // FEN validation error message
 
@@ -88,6 +97,7 @@ function App() {
              sendEngineCommand('isready');
         } else if (message.startsWith('readyok')) {
              setEngineMessage('Engine initialized and ready.');
+             performStaticAnalysis(chess.current.fen()); // <--- ADD THIS CALL
              // Maybe trigger analysis for initial position?
              // startAnalysis(boardFen); // Optional: Uncomment to analyze on load
         } else if (message.startsWith('info')) {
@@ -421,6 +431,53 @@ function App() {
         // or the analysis state changes. analyzingFenRef is stable, analysisPVs content matters.
     }, [selectedLineIndex, currentMoveInLine, isAnalyzing, analysisPVs, boardFen]); // Include boardFen to avoid unnecessary updates
 
+        // --- Static Analysis Function --- ADD THIS ---
+        const performStaticAnalysis = (currentFen) => {
+            console.log("[Static Analysis] Starting for FEN:", currentFen);
+            const game = new Chess(currentFen);
+            const turn = game.turn(); // 'w' or 'b'
+            const opponentColor = turn === 'w' ? 'b' : 'w';
+    
+            const currentAttacked = [];
+            const currentControlledCenter = [];
+    
+            // 1. Find attacked friendly pieces and their defense status
+            SQUARES.forEach(square => {
+                const piece = game.get(square);
+                // Is it our piece?
+                if (piece && piece.color === turn) {
+                    // Is this square attacked by the opponent?
+                    const isAttacked = game.isAttacked(square, opponentColor);
+    
+                    if (isAttacked) {
+                        // Is it defended by us?
+                        const isDefended = game.isAttacked(square, turn);
+                        currentAttacked.push({
+                            square: square,
+                            type: piece.type, // p, n, b, r, q, k
+                            defended: isDefended
+                        });
+                        console.log(`[Static Analysis] Piece ${piece.type} on ${square} is ATTACKED. Defended: ${isDefended}`);
+                    }
+                }
+            });
+    
+            // 2. Find controlled center squares
+            CENTER_SQUARES.forEach(centerSquare => {
+                 // Is this center square attacked by us?
+                 if (game.isAttacked(centerSquare, turn)) {
+                     currentControlledCenter.push(centerSquare);
+                     console.log(`[Static Analysis] Center square ${centerSquare} is CONTROLLED.`);
+                 }
+            });
+    
+            // Update state
+            setAttackedPieces(currentAttacked);
+            setControlledCenterSquares(currentControlledCenter);
+            console.log("[Static Analysis] Finished.");
+        };
+        // --- End of Static Analysis Function ---
+
     // --- Helper to send commands to Stockfish Worker ---
     const sendEngineCommand = (command) => {
         if (worker.current) {
@@ -523,6 +580,7 @@ function App() {
             // TODO: Trigger analysis after player move?
             // Example: analyzePosition(newFen);
                     // Start analysis after the move is made
+            performStaticAnalysis(newFen); // <--- ADD THIS CALL        
             startAnalysis(newFen); // <--- ADD THIS CALL
             return true;
 
@@ -561,6 +619,7 @@ function App() {
             setFenError('');
             console.log("FEN updated successfully:", validFen);
             // TODO: Trigger analysis after FEN update?
+            performStaticAnalysis(validFen); // <--- ADD THIS CALL
             // Example: analyzePosition(validFen);
             startAnalysis(validFen); // <--- ADD THIS CALL
 
@@ -587,6 +646,20 @@ function App() {
     };
     */
 
+        // ---> ADD THIS: Determine current turn for display <---
+        let currentPlayer = 'w'; // Default
+        let turnDisplay = 'White to play';
+        try {
+            // Create a temporary instance just to get the turn from the current board FEN
+            const gameForTurn = new Chess(boardFen);
+            currentPlayer = gameForTurn.turn(); // 'w' or 'b'
+            turnDisplay = currentPlayer === 'w' ? 'White to play' : 'Black to play';
+        } catch (e) {
+            // If boardFen is somehow invalid temporarily, don't crash
+            console.error("Could not determine turn from boardFen:", boardFen);
+            turnDisplay = 'Turn Unknown';
+        }
+        // ---> END OF ADDITION <---
 
     // --- JSX Return ---
     return (
@@ -597,6 +670,11 @@ function App() {
                     onPieceDrop={handlePieceDrop}
                     boardWidth={500} // Or your preferred width
                 />
+                     {/* ---> ADD THIS ELEMENT <--- */}
+                <p className="turn-indicator">
+                {turnDisplay}
+                </p>
+             {/* ---> END OF ADDITION <--- */}
             </div>
 
             <div className="analysis-area">
@@ -615,6 +693,38 @@ function App() {
                 <div className="engine-status">
                     <p><strong>Engine Status:</strong> {engineMessage}</p>
                 </div>
+
+                            {/* --- ADD Static Analysis Display Section --- */}
+                            <div className="static-analysis">
+                    <h4>Static Analysis</h4>
+
+                    {/* Attacked Pieces */}
+                    <div>
+                        <strong>Attacked Pieces:</strong>
+                        {attackedPieces.length > 0 ? (
+                            <ul>
+                                {attackedPieces.map(p => (
+                                    <li key={p.square}>
+                                        {p.type.toUpperCase()} on {p.square} ({p.defended ? 'Defended' : 'UNDEFENDED'})
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p>None</p>
+                        )}
+                    </div>
+
+                    {/* Controlled Center */}
+                    <div>
+                        <strong>Controlled Center Squares:</strong>
+                        {controlledCenterSquares.length > 0 ? (
+                            <p>{controlledCenterSquares.join(', ')}</p>
+                        ) : (
+                            <p>None</p>
+                        )}
+                    </div>
+                </div>
+                {/* --- End of Static Analysis Display Section --- */}  
 
                  {/* Placeholder button to trigger analysis manually for now */}
                  {/* <button onClick={() => analyzePosition(boardFen)} disabled={!engineLoaded}>

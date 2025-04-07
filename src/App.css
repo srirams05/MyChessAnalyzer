@@ -129,17 +129,18 @@ body {
     color: #333;
 }
 
+/* Updated Engine Status Styling */
 .engine-status {
-  margin-top: 15px;
-  margin-bottom: 15px;
-  padding: 10px;
-  background-color: #e9ecef; /* Light grey background */
+  margin-top: 6px;      /* Reduced top margin */
+  margin-bottom: 8px;  /* Reduced bottom margin */
+  padding: 4px 8px;    /* Reduced padding (vertical horizontal) */
+  background-color: #e9ecef;
   border-radius: 4px;
   border: 1px solid #ced4da;
 }
 .engine-status p {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.65rem;   /* Reduced font size */
   color: #495057;
 }
 
@@ -211,3 +212,66 @@ body {
    background-color: #e9ecef; /* Light grey hover */
 }
 
+/* Static Analysis Styling */
+.static-analysis {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #f8f9fa; /* Very light grey */
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.static-analysis h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #343a40;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 5px;
+}
+
+.static-analysis div { /* Style subsections */
+  margin-bottom: 10px;
+}
+.static-analysis div:last-child {
+  margin-bottom: 0;
+}
+
+
+.static-analysis strong {
+  color: #495057;
+}
+
+.static-analysis ul {
+  list-style: disc;
+  padding-left: 20px;
+  margin-top: 5px;
+  margin-bottom: 0;
+}
+.static-analysis li {
+  margin-bottom: 3px;
+}
+/* Highlight undefended pieces */
+.static-analysis li: Lacks support for contains() selector yet, do manually or with class */
+/* Example: add class in JS if !p.defended */
+.static-analysis span.undefended { /* Add this class in JSX if needed */
+    color: #dc3545; /* Danger red */
+    font-weight: bold;
+}
+
+.static-analysis p { /* For 'None' text or list of squares */
+   margin-top: 5px;
+   margin-bottom: 0;
+   font-style: italic;
+   color: #6c757d;
+}
+
+/* Styling for Turn Indicator */
+.turn-indicator {
+  font-size: 0.9rem;  /* Smaller font size */
+  margin-top: 10px;   /* Space above the text */
+  margin-bottom: 0;   /* No extra space below */
+  color: #444;       /* Dark grey color */
+  text-align: center; /* Center text below board */
+  font-weight: bold;  /* Make it stand out slightly */
+}
